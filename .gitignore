@@ -1,0 +1,19 @@
+.DS_Store
+*.pyc
+__pycache__/
+# fetched-and-cached intermediates — a project's own scripts refetch them
+.cache/
+# raw downloads and intermediates — regenerate them, don't commit them
+*.csv
+*.dly
+!docs/*.csv
+openalex_*.json
+payload.json
+retractionwatch.csv
+node_modules/
+
+# raw harvest and the built payload — regenerate with src/harvest.py then src/build_payload.py.
+# parcels.ndjson is 105 MB; payload.b64 is already inside index.html.
+data/parcels.ndjson
+data/payload.b64
+data/harvest.log
