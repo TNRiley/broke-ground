@@ -62,3 +62,14 @@ html = html.replace("__PAYLOAD__", payload)
 open(OUT, "w").write(html)
 print(f"index.html {os.path.getsize(OUT)/1e6:.2f} MB  "
       f"(meta {len(json.dumps(meta))/1e6:.2f} MB + payload {len(payload)/1e6:.2f} MB)")
+
+# Regenerating the page drops the Pages wrapper and the catalog breadcrumb unless they are
+# re-applied here -- both are idempotent. See catalog/PUBLISHING.md.
+import subprocess
+TOOLS = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "catalog", "tools"))
+for tool in ("wrap_for_pages.py", "add_catalog_link.py"):
+    t = os.path.join(TOOLS, tool)
+    if os.path.exists(t):
+        subprocess.run([sys.executable, t, OUT], check=True)
+    else:
+        print(f"  note: {tool} not found at {TOOLS}; index.html is Artifact-shaped, not Pages-shaped")
