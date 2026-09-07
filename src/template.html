@@ -115,6 +115,7 @@ header{border-bottom:1px solid var(--rule);background:var(--surface)}
 .chip .sw{width:8px;height:8px;border-radius:1px;flex:0 0 auto}
 .chip .n{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--ink3);
   font-variant-numeric:tabular-nums}
+.chip .n.nb{color:var(--ink3);opacity:.72;border-left:1px solid var(--rule);padding-left:5px}
 .chip[aria-pressed="true"]{border-color:var(--ink2);background:var(--surface);color:var(--ink);
   box-shadow:inset 0 0 0 1px var(--rule2)}
 .chip[aria-pressed="false"]{opacity:.5}
@@ -243,6 +244,7 @@ if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)
       <div class="ramp"></div>
       <div class="rampends"><span class="mono" id="rampLo">1700</span><span class="mono" id="rampHi">2025</span></div>
       <div class="rampends" style="margin-top:7px"><span id="legNote">Brighter = newer</span></div>
+      <div class="rampends" style="margin-top:6px"><span><span style="display:inline-block;width:8px;height:8px;border-radius:1px;background:var(--ink3);margin-right:5px"></span>Land with no building recorded</span></div>
     </div>
     <div class="zoomers">
       <button type="button" id="zIn" title="Zoom in" aria-label="Zoom in">+</button>
@@ -257,7 +259,11 @@ if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)
       <div class="count mono" id="visN">&mdash;</div>
       <div class="countsub" id="visSub">buildings standing</div>
       <div class="plain">A dot is one tax parcel &mdash; roughly one building lot. The colour is the year
-        the assessor recorded its main building as finished.</div>
+        the assessor recorded its main building as finished. <b>Parcels with no building on them have no
+        year</b>, so the scrubber cannot reach them: the count beside each building type is what the map
+        will draw, and the <b>+</b> figure after it is land of that type with nothing recorded on it.
+        Switch on the &ldquo;Land, no building&rdquo; layer to see those &mdash; almost every farm and
+        every vacant lot is in there.</div>
     </div>
     <div class="railpad">
       <div class="eyebrow">What kind of building</div>
@@ -270,6 +276,9 @@ if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)
           <span class="sw" style="background:var(--accent)"></span>Historic inventory</button>
         <button class="chip" type="button" data-layer="ar" aria-pressed="false">
           <span class="sw" style="background:var(--hot)"></span>Agricultural Reserve</button>
+        <button class="chip" type="button" data-layer="noyear" aria-pressed="false"
+          title="Parcels the assessor records no building on: parkland, road parcels, vacant lots, common areas, farmland. They have no year, so the scrubber cannot reach them.">
+          <span class="sw" style="background:var(--ink3)"></span>Land, no building</button>
         <button class="chip" type="button" data-layer="metro" aria-pressed="false">
           <span class="sw" style="background:var(--ink2)"></span>Metro stations</button>
         <button class="chip" type="button" data-layer="muni" aria-pressed="true">
@@ -625,7 +634,7 @@ const uy=p=>(H/2-p)/V.s+V.cy;
 /* ------------------------------------------------------------------ state */
 let endYear=2025, onlyDecade=false, fadeOld=true;
 const formOn=new Array(META.forms.length).fill(true);
-const layerOn={mihp:false,ar:false,metro:false,muni:true};
+const layerOn={mihp:false,ar:false,metro:false,muni:true,noyear:false};
 let selected=-1, highlight=null;          // highlight = {kind, id} from search
 
 let drawQueued=false;
@@ -685,12 +694,27 @@ function draw(){
     if(fadeOld && !hot[idx] && endYear<2025) al*=0.42;
     stamp(da,idx,r,g,bl,al,dot);
   }
+  /* Parcels with no recorded building sit after the year-sorted prefix and are not on the
+     ramp, so they are stamped separately in a neutral — a different kind of thing, not an
+     older building. */
+  let nb=0;
+  if(layerOn.noyear){
+    const nc=hex2rgb(PAL.ink3);
+    for(let i=META.n_built;i<N;i++){
+      if(!formOn[C.form[i]]) continue;
+      const px=(sx(C.x[i]))|0; if(px<0||px>=W) continue;
+      const py=(sy(C.y[i]))|0; if(py<0||py>=H) continue;
+      stamp(da,py*W+px,nc[0],nc[1],nc[2],0.55,dot);
+      nb++;
+    }
+  }
   ctx.putImageData(im,0,0);
   drawMarkers();
   document.getElementById("visN").textContent=shown.toLocaleString();
   document.getElementById("visSub").textContent =
     (onlyDecade? `built in the ${decStart}s`:`standing in ${endYear}`) +
-    (formOn.every(Boolean)?"":" · filtered");
+    (formOn.every(Boolean)?"":" · filtered") +
+    (nb? ` · plus ${nb.toLocaleString()} with no building`:"");
 }
 function stamp(da,idx,r,g,b,a,size){
   const x0=idx%W, y0=(idx/W)|0;
@@ -829,12 +853,16 @@ function pick(e){
   let best=-1, bd=(18*DPR)**2;
   /* only what is actually drawn is clickable -- picking an invisible parcel out of
      blank map reads as a bug, however defensible it is */
-  for(let i=0;i<end;i++){
-    if(!formOn[C.form[i]]) continue;
-    if(decStart>=0 && C.year[i]<decStart) continue;
-    const dx=sx(C.x[i])-mx, dy=sy(C.y[i])-my, d=dx*dx+dy*dy;
-    if(d<bd){bd=d;best=i;}
-  }
+  const scan=(a,b)=>{
+    for(let i=a;i<b;i++){
+      if(!formOn[C.form[i]]) continue;
+      if(i<end && decStart>=0 && C.year[i]<decStart) continue;
+      const dx=sx(C.x[i])-mx, dy=sy(C.y[i])-my, d=dx*dx+dy*dy;
+      if(d<bd){bd=d;best=i;}
+    }
+  };
+  scan(0,end);
+  if(layerOn.noyear) scan(META.n_built,N);
   selected=best; showDetail(); requestDraw();
 }
 
@@ -889,13 +917,20 @@ function pdfUrl(p){ return p? p.replace(/ /g,"%20"):"#"; }
 /* ------------------------------------------------------------------ chips + decades */
 const FORMCOL=["--c0","--c1","--c2","--c3","--c4","--ink3","--c4","--ink3"];
 function buildChips(){
-  const counts=new Array(META.forms.length).fill(0);
-  for(let i=0;i<N;i++) counts[C.form[i]]++;
+  /* Two counts, deliberately. The map draws a parcel only if it has a build year, so a
+     single total is a promise the map cannot keep: 816 of the 819 farms are farmland with
+     no building on it. The first number is what will appear; the second is the remainder,
+     reachable through the "Land, no building" layer. */
+  const drawable=new Array(META.forms.length).fill(0);
+  const noyear=new Array(META.forms.length).fill(0);
+  for(let i=0;i<N;i++) (C.year[i]?drawable:noyear)[C.form[i]]++;
   const el=document.getElementById("formChips");
   el.innerHTML=META.forms.map((f,i)=>
-    `<button class="chip" type="button" data-form="${i}" aria-pressed="true">
+    `<button class="chip" type="button" data-form="${i}" aria-pressed="true"
+       title="${drawable[i].toLocaleString()} with a recorded build year${noyear[i]?`, plus ${noyear[i].toLocaleString()} parcels of ${f.toLowerCase()} land with no building recorded — switch on the “Land, no building” layer to see those`:""}">
        <span class="sw" style="background:var(${FORMCOL[i]})"></span>${f}
-       <span class="n">${counts[i].toLocaleString()}</span></button>`).join("");
+       <span class="n">${drawable[i].toLocaleString()}</span>
+       ${noyear[i]?`<span class="n nb">+${noyear[i].toLocaleString()}</span>`:""}</button>`).join("");
   el.querySelectorAll("[data-form]").forEach(b=>b.addEventListener("click",()=>{
     const i=+b.dataset.form;
     if(formOn.every(Boolean)){ formOn.fill(false); formOn[i]=true; }        // first click isolates
@@ -1287,6 +1322,16 @@ function buildMethods(){
     years &mdash; a placeholder for "old, and nobody knows". Treat anything before about 1920 as an estimate.
     A major renovation can also reset the year on some records, so the very oldest houses are
     under-counted, not over-counted.</p></div>
+
+  <div><h3>The count beside a building type, and the one after it</h3><p>The map can only place a
+    parcel if the assessor recorded a year for it, so each type carries two figures: what will be
+    drawn, and &mdash; after the <b>+</b> &mdash; land of that type with no building recorded. For
+    most types the second number is a rounding error. For two of them it is nearly everything:
+    <b>816 of 819 farms</b> and <b>14,845 of 14,852 &ldquo;other&rdquo;</b> parcels are land, not
+    buildings, because a parcel with no structure on it is classified from its land use alone. That
+    is also why &ldquo;Farm&rdquo; here means farmland rather than farmhouses. Switch on the
+    <em>Land, no building</em> layer and all ${META.n_unbuilt.toLocaleString()} of them appear in a
+    neutral grey, outside the year ramp, because they are not on it.</p></div>
 
   <div><h3>What a dot is</h3><p>One tax account, drawn at the point the state files it under &mdash;
     close to the building but not its footprint, and for a condominium every unit shares one point.
